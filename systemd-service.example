@@ -1,0 +1,35 @@
+[Unit]
+Description=GivEnergy Prometheus Exporter
+Documentation=https://github.com/yourusername/prometheus-givenergy
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=prometheus
+Group=prometheus
+
+# Installation directory
+WorkingDirectory=/opt/prometheus-givenergy
+
+# With uv virtual environment:
+ExecStart=/opt/prometheus-givenergy/.venv/bin/python3 -m givenergy_exporter
+
+# Alternative: if using pip installation without venv
+# ExecStart=/usr/local/bin/givenergy-exporter
+
+# Restart policy
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=givenergy-exporter
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log
+
+[Install]
+WantedBy=multi-user.target
