@@ -15,6 +15,13 @@ WorkingDirectory=/opt/prometheus-givenergy
 # With uv virtual environment:
 ExecStart=/opt/prometheus-givenergy/.venv/bin/python3 -m givenergy_exporter
 
+# Environment-based configuration
+Environment=INVERTER_HOST=192.168.1.100
+Environment=INVERTER_PORT=8899
+Environment=POLL_INTERVAL=30
+Environment=PROMETHEUS_PORT=9100
+Environment=PROMETHEUS_ADDRESS=0.0.0.0
+
 # Alternative: if using pip installation without venv
 # ExecStart=/usr/local/bin/givenergy-exporter
 

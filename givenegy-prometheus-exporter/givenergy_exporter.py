@@ -8,7 +8,6 @@ Exports metrics from GiveNergy inverters via Modbus TCP to Prometheus.
 import logging
 import os
 import time
-import yaml
 from typing import Any, Dict, Optional
 from prometheus_client import start_http_server, Gauge, Counter
 from givenergy_modbus.client import GivEnergyClient
@@ -70,25 +69,43 @@ class GiveEnergyExporter:
         'inverter_status': ('inverter_status', 'inverter_status', 'System operational status'),
     }
 
-    def __init__(self, config_file: str = 'config.yaml'):
-        """Initialize the exporter with configuration."""
-        self.config = self._load_config(config_file)
+    def __init__(self):
+        """Initialize the exporter with environment configuration."""
+        self.config = self._load_config_from_env()
         self.client: Optional[GivEnergyClient] = None
         self.plant: Optional[Plant] = None
         self.metrics: Dict = {}
         self._setup_metrics()
         
-    def _load_config(self, config_file: str) -> dict:
-        """Load configuration from YAML file."""
+    @staticmethod
+    def _get_env_int(name: str, default: int) -> int:
+        """Read an integer environment variable with validation."""
+        value = os.environ.get(name)
+        if value is None or value == "":
+            return default
+
         try:
-            with open(config_file, 'r') as f:
-                return yaml.safe_load(f)
-        except FileNotFoundError:
-            logger.error(f"Configuration file not found: {config_file}")
-            raise
-        except yaml.YAMLError as e:
-            logger.error(f"Error parsing configuration file: {e}")
-            raise
+            return int(value)
+        except ValueError as e:
+            raise ValueError(f"Environment variable {name} must be an integer") from e
+
+    def _load_config_from_env(self) -> dict:
+        """Load configuration from environment variables."""
+        inverter_host = os.environ.get("INVERTER_HOST", "").strip()
+        if not inverter_host:
+            raise ValueError("Environment variable INVERTER_HOST is required")
+
+        return {
+            "inverter": {
+                "host": inverter_host,
+                "port": self._get_env_int("INVERTER_PORT", 8899),
+                "poll_interval": self._get_env_int("POLL_INTERVAL", 30),
+            },
+            "prometheus": {
+                "port": self._get_env_int("PROMETHEUS_PORT", 9100),
+                "address": os.environ.get("PROMETHEUS_ADDRESS", "0.0.0.0"),
+            },
+        }
 
     def _setup_metrics(self):
         """Set up Prometheus metrics."""
@@ -207,7 +224,7 @@ class GiveEnergyExporter:
 def main():
     """Main entry point."""
     try:
-        exporter = GiveEnergyExporter('config.yaml')
+        exporter = GiveEnergyExporter()
         exporter.run()
     except Exception as e:
         logger.error(f"Fatal error: {e}")

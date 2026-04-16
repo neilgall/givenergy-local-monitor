@@ -6,10 +6,13 @@ services:
     container_name: givenergy-exporter
     ports:
       - "9100:9100"
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro
     restart: unless-stopped
     environment:
+      - INVERTER_HOST=10.180.1.188
+      - INVERTER_PORT=8899
+      - POLL_INTERVAL=30
+      - PROMETHEUS_ADDRESS=0.0.0.0
+      - PROMETHEUS_PORT=9100
       - TZ=UTC
     logging:
       driver: "json-file"
