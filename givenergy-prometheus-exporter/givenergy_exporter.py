@@ -25,48 +25,91 @@ logging.getLogger("givenergy_modbus").setLevel(logging.WARNING)  # Suppress verb
 class GiveEnergyExporter:
     """Exports GiveNergy inverter metrics to Prometheus."""
 
-    # Metrics mapped to decoded givenergy-modbus inverter model attributes
+    INVERTER_STATUS_LABELS = {
+        0: 'WAITING',
+        1: 'NORMAL',
+        2: 'WARNING',
+        3: 'FAULT',
+        4: 'FLASH_FW_UPDATE',
+    }
+
+    # Scalar metrics mapped to decoded givenergy-modbus inverter model attributes.
     # Format: metric_key: (inverter_attribute, metric_name, description)
-    METRICS_MAP = {
-        # PV (Solar) Power
-        'pv1_power': ('p_pv1', 'pv1_power_watts', 'PV string 1 power output'),
-        'pv2_power': ('p_pv2', 'pv2_power_watts', 'PV string 2 power output'),
-
-        # PV Voltages
-        'pv1_voltage': ('v_pv1', 'pv1_voltage_volts', 'PV string 1 voltage'),
-        'pv2_voltage': ('v_pv2', 'pv2_voltage_volts', 'PV string 2 voltage'),
-
-        # PV Currents
-        'pv1_current': ('i_pv1', 'pv1_current_amps', 'PV string 1 input current'),
-        'pv2_current': ('i_pv2', 'pv2_current_amps', 'PV string 2 input current'),
-
+    SCALAR_METRICS_MAP = {
         # Grid
-        'grid_power': ('p_grid_out', 'grid_power_watts', 'Grid power (+ = export, - = import)'),
-        'grid_voltage': ('v_ac1', 'grid_voltage_volts', 'Grid voltage'),
-        'grid_current': ('i_grid_port', 'grid_current_amps', 'Grid output current'),
-        'grid_frequency': ('f_ac1', 'grid_frequency_hz', 'Grid frequency'),
+        'grid_power': ('p_grid_out', 'givenergy_power_grid_power', 'Grid power (+ = export, - = import)'),
+        'grid_voltage': ('v_ac1', 'givenergy_power_grid_voltage', 'Grid voltage'),
+        'grid_current': ('i_grid_port', 'givenergy_power_grid_current', 'Grid output current'),
+        'grid_frequency': ('f_ac1', 'givenergy_power_grid_frequency', 'Grid frequency'),
 
-        # Load/Consumption
-        'load_power': ('p_load_demand', 'load_power_watts', 'House load/consumption power'),
+        # Consumption
+        'consumption_power': ('p_load_demand', 'givenergy_power_consumption_power', 'House load/consumption power'),
 
         # Battery
-        'battery_power': ('p_battery', 'battery_power_watts', 'Battery power (+ = discharge, - = charge)'),
-        'battery_voltage': ('v_battery', 'battery_voltage_volts', 'Battery pack voltage'),
-        'battery_current': ('i_battery', 'battery_current_amps', 'Battery current (+ = discharge, - = charge)'),
-        'battery_soc': ('battery_percent', 'battery_soc_percent', 'Battery state of charge percentage'),
+        'battery_power': ('p_battery', 'givenergy_power_battery_power', 'Battery power (+ = discharge, - = charge)'),
+        'battery_percent': ('battery_percent', 'givenergy_power_battery_percent', 'Battery state of charge percentage'),
+        'battery_temperature': ('temp_battery', 'givenergy_power_battery_temperature', 'Battery pack temperature'),
 
-        # Temperatures
+        # Inverter
         'inverter_temperature': (
             'temp_inverter_heatsink',
-            'inverter_temperature_celsius',
+            'givenergy_power_inverter_temperature',
             'Inverter heatsink temperature',
         ),
-        'battery_temperature': ('temp_battery', 'battery_temperature_celsius', 'Battery pack temperature'),
+        'inverter_power': ('p_inverter_out', 'givenergy_power_inverter_power', 'Inverter AC output power'),
+        'inverter_output_voltage': (
+            'v_eps_backup',
+            'givenergy_power_inverter_output_voltage',
+            'Inverter output voltage',
+        ),
+        'inverter_output_frequency': (
+            'f_eps_backup',
+            'givenergy_power_inverter_output_frequency',
+            'Inverter output frequency',
+        ),
+        'inverter_eps_power': (
+            'p_eps_backup',
+            'givenergy_power_inverter_eps_power',
+            'Inverter EPS backup power',
+        ),
 
-        # System State
-        'system_mode': ('system_mode', 'system_mode', 'Current operating mode'),
-        'charge_status': ('charge_status', 'battery_charge_status', 'Battery charging status'),
-        'inverter_status': ('inverter_status', 'inverter_status', 'System operational status'),
+        # Day counters
+        'today_ac_charge': ('e_inverter_in_day', 'givenergy_today_ac_charge', 'AC charge energy today'),
+        'today_battery_charge': (
+            'e_battery_charge_day',
+            'givenergy_today_battery_charge',
+            'Battery charge energy today',
+        ),
+        'today_battery_discharge': (
+            'e_battery_discharge_day',
+            'givenergy_today_battery_discharge',
+            'Battery discharge energy today',
+        ),
+        'today_grid_export': ('e_grid_out_day', 'givenergy_today_grid_export', 'Grid export energy today'),
+        'today_grid_import': ('e_grid_in_day', 'givenergy_today_grid_import', 'Grid import energy today'),
+
+        # Lifetime counters
+        'total_ac_charge': ('e_inverter_in_total', 'givenergy_total_ac_charge', 'AC charge energy total'),
+        'total_battery_charge': (
+            'e_battery_charge_total',
+            'givenergy_total_battery_charge',
+            'Battery charge energy total',
+        ),
+        'total_battery_discharge': (
+            'e_battery_discharge_total',
+            'givenergy_total_battery_discharge',
+            'Battery discharge energy total',
+        ),
+        'total_grid_export': ('e_grid_out_total', 'givenergy_total_grid_export', 'Grid export energy total'),
+        'total_grid_import': ('e_grid_in_total', 'givenergy_total_grid_import', 'Grid import energy total'),
+    }
+
+    # PV array metrics expose the same names/labels used by the backfilled OpenMetrics.
+    # Format: metric_key: (attr1, attr2, metric_name, description)
+    ARRAY_METRICS_MAP = {
+        'solar_arrays_power': ('p_pv1', 'p_pv2', 'givenergy_power_solar_arrays_power', 'PV array power'),
+        'solar_arrays_voltage': ('v_pv1', 'v_pv2', 'givenergy_power_solar_arrays_voltage', 'PV array voltage'),
+        'solar_arrays_current': ('i_pv1', 'i_pv2', 'givenergy_power_solar_arrays_current', 'PV array current'),
     }
 
     def __init__(self):
@@ -121,12 +164,51 @@ class GiveEnergyExporter:
             'givenergy_last_update_timestamp_seconds',
             'Timestamp of last successful update'
         )
-        
-        # Create gauges for all metrics
-        for metric_key, (_, metric_name, description) in self.METRICS_MAP.items():
+
+        # Create gauges for scalar metrics.
+        for metric_key, (_, metric_name, description) in self.SCALAR_METRICS_MAP.items():
             self.metrics[metric_key] = Gauge(
-                f'givenergy_{metric_name}',
+                metric_name,
                 description
+            )
+
+        # Total solar power to match JSON/OpenMetrics backfill naming.
+        self.metrics['solar_power_total'] = Gauge(
+            'givenergy_power_solar_power',
+            'Total PV solar power across arrays'
+        )
+        self.metrics['today_solar'] = Gauge(
+            'givenergy_today_solar',
+            'Solar generation energy today'
+        )
+        self.metrics['today_consumption'] = Gauge(
+            'givenergy_today_consumption',
+            'House consumption energy today'
+        )
+        self.metrics['total_solar'] = Gauge(
+            'givenergy_total_solar',
+            'Solar generation energy total'
+        )
+        self.metrics['total_consumption'] = Gauge(
+            'givenergy_total_consumption',
+            'House consumption energy total'
+        )
+        self.metrics['is_metered'] = Gauge(
+            'givenergy_is_metered',
+            'Whether the inverter has metered readings available'
+        )
+        self.metrics['status'] = Gauge(
+            'givenergy_status',
+            'Current inverter status',
+            labelnames=('status',),
+        )
+
+        # Create gauges for array metrics with an "array" label.
+        for metric_key, (_, _, metric_name, description) in self.ARRAY_METRICS_MAP.items():
+            self.metrics[metric_key] = Gauge(
+                metric_name,
+                description,
+                labelnames=('array',),
             )
 
     def _connect(self):
@@ -180,14 +262,107 @@ class GiveEnergyExporter:
             self.client.refresh_plant(self.plant, full_refresh=False)
             inverter = self.plant.inverter
 
-            for metric_key, (field_name, metric_name, _) in self.METRICS_MAP.items():
-                raw_value = getattr(inverter, field_name, None)
-                value = self._as_float(raw_value)
+            def inverter_value(field_name: str) -> Optional[float]:
+                return self._as_float(getattr(inverter, field_name, None))
+
+            for metric_key, (field_name, metric_name, _) in self.SCALAR_METRICS_MAP.items():
+                value = inverter_value(field_name)
                 if value is not None:
                     self.metrics[metric_key].set(value)
                     logger.debug(f"{metric_key}={value} ({metric_name})")
                 else:
                     logger.debug(f"Skipping {metric_key}, unavailable field: {field_name}")
+
+            # Derived total PV power to match givenergy_power_solar_power.
+            pv1_power = inverter_value('p_pv1')
+            pv2_power = inverter_value('p_pv2')
+            if pv1_power is not None and pv2_power is not None:
+                self.metrics['solar_power_total'].set(pv1_power + pv2_power)
+
+            pv1_day = inverter_value('e_pv1_day')
+            pv2_day = inverter_value('e_pv2_day')
+            if pv1_day is not None and pv2_day is not None:
+                today_solar = pv1_day + pv2_day
+                self.metrics['today_solar'].set(today_solar)
+            else:
+                today_solar = None
+
+            total_solar = inverter_value('e_pv_total')
+            if total_solar is not None:
+                self.metrics['total_solar'].set(total_solar)
+
+            today_grid_import = inverter_value('e_grid_in_day')
+            today_grid_export = inverter_value('e_grid_out_day')
+            today_battery_charge = inverter_value('e_battery_charge_day')
+            today_battery_discharge = inverter_value('e_battery_discharge_day')
+            if all(
+                value is not None
+                for value in (
+                    today_solar,
+                    today_grid_import,
+                    today_grid_export,
+                    today_battery_charge,
+                    today_battery_discharge,
+                )
+            ):
+                today_consumption = (
+                    today_solar
+                    + today_grid_import
+                    + today_battery_discharge
+                    - today_grid_export
+                    - today_battery_charge
+                )
+                self.metrics['today_consumption'].set(today_consumption)
+
+            total_grid_import = inverter_value('e_grid_in_total')
+            total_grid_export = inverter_value('e_grid_out_total')
+            total_battery_charge = inverter_value('e_battery_charge_total')
+            total_battery_discharge = inverter_value('e_battery_discharge_total')
+            if all(
+                value is not None
+                for value in (
+                    total_solar,
+                    total_grid_import,
+                    total_grid_export,
+                    total_battery_charge,
+                    total_battery_discharge,
+                )
+            ):
+                total_consumption = (
+                    total_solar
+                    + total_grid_import
+                    + total_battery_discharge
+                    - total_grid_export
+                    - total_battery_charge
+                )
+                self.metrics['total_consumption'].set(total_consumption)
+
+            # The cloud API includes an is_metered boolean; modbus does not expose an exact equivalent.
+            # Expose this family as a constant so live and backfilled series align.
+            self.metrics['is_metered'].set(1.0)
+
+            inverter_status_code = getattr(inverter, 'inverter_status', None)
+            for status_label in self.INVERTER_STATUS_LABELS.values():
+                self.metrics['status'].labels(status=status_label).set(0.0)
+            resolved_status = self.INVERTER_STATUS_LABELS.get(inverter_status_code, 'UNKNOWN')
+            self.metrics['status'].labels(status=resolved_status).set(1.0)
+
+            # Per-array gauges labelled with array="1" and array="2".
+            for metric_key, (field_one, field_two, metric_name, _) in self.ARRAY_METRICS_MAP.items():
+                value_one = inverter_value(field_one)
+                value_two = inverter_value(field_two)
+
+                if value_one is not None:
+                    self.metrics[metric_key].labels(array='1').set(value_one)
+                    logger.debug(f"{metric_key}[array=1]={value_one} ({metric_name})")
+                else:
+                    logger.debug(f"Skipping {metric_key}[array=1], unavailable field: {field_one}")
+
+                if value_two is not None:
+                    self.metrics[metric_key].labels(array='2').set(value_two)
+                    logger.debug(f"{metric_key}[array=2]={value_two} ({metric_name})")
+                else:
+                    logger.debug(f"Skipping {metric_key}[array=2], unavailable field: {field_two}")
 
             self.metrics['last_update_timestamp'].set(time.time())
             self.metrics['read_success'].inc()
