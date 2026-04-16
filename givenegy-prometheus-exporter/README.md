@@ -1,11 +1,11 @@
-# GiveNergy Prometheus Exporter
+# GivEnergy Prometheus Exporter
 
-A Prometheus exporter for GiveNergy inverter metrics via Modbus TCP.
+A Prometheus exporter for GivEnergy inverter metrics via Modbus TCP.
 
 ## Features
 
 - **Real-time Monitoring**: Collects inverter metrics at configurable intervals
-- **Modbus TCP Support**: Connects to GiveNergy inverters via Modbus TCP protocol
+- **Modbus TCP Support**: Connects to GivEnergy inverters via Modbus TCP protocol
 - **Prometheus Integration**: Exposes metrics in Prometheus format
 - **Comprehensive Metrics**: 
   - AC Power and Frequency
@@ -17,7 +17,7 @@ A Prometheus exporter for GiveNergy inverter metrics via Modbus TCP.
 ## Prerequisites
 
 - Python 3.8+
-- Network access to GiveNergy inverter via TCP/IP
+- Network access to GivEnergy inverter via TCP/IP
 
 ## Installation
 
@@ -66,7 +66,7 @@ pip install -e .
 Edit `config.yaml` to configure:
 
 - **Inverter Settings**:
-  - `host`: IP address of the GiveNergy inverter
+  - `host`: IP address of the GivEnergy inverter
   - `port`: Modbus TCP port (typically 502)
   - `unit_id`: Modbus unit ID (typically 1)
   - `timeout`: Connection timeout in seconds
@@ -159,11 +159,11 @@ All metrics are prefixed with `givenergy_`:
 
 ### Register Address Verification
 
-GiveNergy inverters may use different register addresses. If metrics are not appearing:
+GivEnergy inverters may use different register addresses. If metrics are not appearing:
 
 1. Use a Modbus TCP client tool to scan available registers
 2. Update the `REGISTERS` dictionary in `givenergy_exporter.py` with correct addresses
-3. Consult GiveNergy documentation for your specific inverter model
+3. Consult GivEnergy documentation for your specific inverter model
 
 ## Development
 
@@ -224,4 +224,4 @@ MIT
 
 ## Support
 
-For issues or questions, please check the GiveNergy inverter documentation and Modbus protocol specifications.
+For issues or questions, please check the GivEnergy inverter documentation and Modbus protocol specifications.
