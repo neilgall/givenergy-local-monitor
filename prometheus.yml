@@ -7,6 +7,6 @@ global:
 scrape_configs:
   - job_name: 'givenergy'
     static_configs:
-      - targets: ['localhost:9100']
+      - targets: ['givenergy-exporter:9100']
     scrape_interval: 30s
     scrape_timeout: 10s

@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   givenergy-exporter:
-    build: .
+    build: ./givenergy-prometheus-exporter
     container_name: givenergy-exporter
     ports:
       - "9100:9100"
@@ -20,7 +20,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Optional: Prometheus service for testing
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -33,6 +32,25 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=2y'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/givenergy.json
+    depends_on:
+      - prometheus
+    restart: unless-stopped
 
 volumes:
   prometheus-data:
+  grafana-data:
