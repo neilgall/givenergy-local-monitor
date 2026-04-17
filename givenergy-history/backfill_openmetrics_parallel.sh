@@ -26,18 +26,19 @@ fi
 
 run_backfill() {
   local input_file="$1"
+  local output_dir="$OUTPUT_BASE_DIR/$(basename "${input_file%.om}")"
 
-  echo "Backfilling $input_file -> $OUTPUT_BASE_DIR" >&2
+  echo "Backfilling $input_file -> $output_dir" >&2
 
   if [[ -n "$MAX_BLOCK_DURATION" ]]; then
     "$PROMTOOL_BIN" tsdb create-blocks-from openmetrics \
       --max-block-duration="$MAX_BLOCK_DURATION" \
       "$input_file" \
-      "$OUTPUT_BASE_DIR"
+      "$output_dir"
   else
     "$PROMTOOL_BIN" tsdb create-blocks-from openmetrics \
       "$input_file" \
-      "$OUTPUT_BASE_DIR"
+      "$output_dir"
   fi
 }
 
