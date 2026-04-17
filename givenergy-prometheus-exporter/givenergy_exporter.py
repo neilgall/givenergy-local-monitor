@@ -112,6 +112,15 @@ class GiveEnergyExporter:
         'solar_arrays_current': ('i_pv1', 'i_pv2', 'givenergy_power_solar_arrays_current', 'PV array current'),
     }
 
+    @staticmethod
+    def _resolve_inverter_serial(inverter: Any) -> str:
+        """Best-effort extraction of inverter serial from the decoded model."""
+        for attr in ('serial_number', 'inverter_serial_number', 'serial'):
+            value = getattr(inverter, attr, None)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return 'unknown'
+
     def __init__(self):
         """Initialize the exporter with environment configuration."""
         self.config = self._load_config_from_env()
@@ -145,7 +154,7 @@ class GiveEnergyExporter:
                 "poll_interval": self._get_env_int("POLL_INTERVAL", 30),
             },
             "prometheus": {
-                "port": self._get_env_int("PROMETHEUS_PORT", 9100),
+                "port": self._get_env_int("PROMETHEUS_PORT", 9191),
                 "address": os.environ.get("PROMETHEUS_ADDRESS", "0.0.0.0"),
             },
         }
@@ -162,45 +171,53 @@ class GiveEnergyExporter:
         )
         self.metrics['last_update_timestamp'] = Gauge(
             'givenergy_last_update_timestamp_seconds',
-            'Timestamp of last successful update'
+            'Timestamp of last successful update',
+            labelnames=('inverter_serial',),
         )
 
         # Create gauges for scalar metrics.
         for metric_key, (_, metric_name, description) in self.SCALAR_METRICS_MAP.items():
             self.metrics[metric_key] = Gauge(
                 metric_name,
-                description
+                description,
+                labelnames=('inverter_serial',),
             )
 
         # Total solar power to match JSON/OpenMetrics backfill naming.
         self.metrics['solar_power_total'] = Gauge(
             'givenergy_power_solar_power',
-            'Total PV solar power across arrays'
+            'Total PV solar power across arrays',
+            labelnames=('inverter_serial',),
         )
         self.metrics['today_solar'] = Gauge(
             'givenergy_today_solar',
-            'Solar generation energy today'
+            'Solar generation energy today',
+            labelnames=('inverter_serial',),
         )
         self.metrics['today_consumption'] = Gauge(
             'givenergy_today_consumption',
-            'House consumption energy today'
+            'House consumption energy today',
+            labelnames=('inverter_serial',),
         )
         self.metrics['total_solar'] = Gauge(
             'givenergy_total_solar',
-            'Solar generation energy total'
+            'Solar generation energy total',
+            labelnames=('inverter_serial',),
         )
         self.metrics['total_consumption'] = Gauge(
             'givenergy_total_consumption',
-            'House consumption energy total'
+            'House consumption energy total',
+            labelnames=('inverter_serial',),
         )
         self.metrics['is_metered'] = Gauge(
             'givenergy_is_metered',
-            'Whether the inverter has metered readings available'
+            'Whether the inverter has metered readings available',
+            labelnames=('inverter_serial',),
         )
         self.metrics['status'] = Gauge(
             'givenergy_status',
             'Current inverter status',
-            labelnames=('status',),
+            labelnames=('inverter_serial', 'status'),
         )
 
         # Create gauges for array metrics with an "array" label.
@@ -208,7 +225,7 @@ class GiveEnergyExporter:
             self.metrics[metric_key] = Gauge(
                 metric_name,
                 description,
-                labelnames=('array',),
+                labelnames=('inverter_serial', 'array'),
             )
 
     def _connect(self):
@@ -261,6 +278,7 @@ class GiveEnergyExporter:
             assert self.plant is not None
             self.client.refresh_plant(self.plant, full_refresh=False)
             inverter = self.plant.inverter
+            inverter_serial = self._resolve_inverter_serial(inverter)
 
             def inverter_value(field_name: str) -> Optional[float]:
                 return self._as_float(getattr(inverter, field_name, None))
@@ -268,7 +286,7 @@ class GiveEnergyExporter:
             for metric_key, (field_name, metric_name, _) in self.SCALAR_METRICS_MAP.items():
                 value = inverter_value(field_name)
                 if value is not None:
-                    self.metrics[metric_key].set(value)
+                    self.metrics[metric_key].labels(inverter_serial=inverter_serial).set(value)
                     logger.debug(f"{metric_key}={value} ({metric_name})")
                 else:
                     logger.debug(f"Skipping {metric_key}, unavailable field: {field_name}")
@@ -277,19 +295,19 @@ class GiveEnergyExporter:
             pv1_power = inverter_value('p_pv1')
             pv2_power = inverter_value('p_pv2')
             if pv1_power is not None and pv2_power is not None:
-                self.metrics['solar_power_total'].set(pv1_power + pv2_power)
+                self.metrics['solar_power_total'].labels(inverter_serial=inverter_serial).set(pv1_power + pv2_power)
 
             pv1_day = inverter_value('e_pv1_day')
             pv2_day = inverter_value('e_pv2_day')
             if pv1_day is not None and pv2_day is not None:
                 today_solar = pv1_day + pv2_day
-                self.metrics['today_solar'].set(today_solar)
+                self.metrics['today_solar'].labels(inverter_serial=inverter_serial).set(today_solar)
             else:
                 today_solar = None
 
             total_solar = inverter_value('e_pv_total')
             if total_solar is not None:
-                self.metrics['total_solar'].set(total_solar)
+                self.metrics['total_solar'].labels(inverter_serial=inverter_serial).set(total_solar)
 
             today_grid_import = inverter_value('e_grid_in_day')
             today_grid_export = inverter_value('e_grid_out_day')
@@ -305,6 +323,11 @@ class GiveEnergyExporter:
                     today_battery_discharge,
                 )
             ):
+                assert today_solar is not None
+                assert today_grid_import is not None
+                assert today_grid_export is not None
+                assert today_battery_charge is not None
+                assert today_battery_discharge is not None
                 today_consumption = (
                     today_solar
                     + today_grid_import
@@ -312,7 +335,7 @@ class GiveEnergyExporter:
                     - today_grid_export
                     - today_battery_charge
                 )
-                self.metrics['today_consumption'].set(today_consumption)
+                self.metrics['today_consumption'].labels(inverter_serial=inverter_serial).set(today_consumption)
 
             total_grid_import = inverter_value('e_grid_in_total')
             total_grid_export = inverter_value('e_grid_out_total')
@@ -328,6 +351,11 @@ class GiveEnergyExporter:
                     total_battery_discharge,
                 )
             ):
+                assert total_solar is not None
+                assert total_grid_import is not None
+                assert total_grid_export is not None
+                assert total_battery_charge is not None
+                assert total_battery_discharge is not None
                 total_consumption = (
                     total_solar
                     + total_grid_import
@@ -335,17 +363,20 @@ class GiveEnergyExporter:
                     - total_grid_export
                     - total_battery_charge
                 )
-                self.metrics['total_consumption'].set(total_consumption)
+                self.metrics['total_consumption'].labels(inverter_serial=inverter_serial).set(total_consumption)
 
             # The cloud API includes an is_metered boolean; modbus does not expose an exact equivalent.
             # Expose this family as a constant so live and backfilled series align.
-            self.metrics['is_metered'].set(1.0)
+            self.metrics['is_metered'].labels(inverter_serial=inverter_serial).set(1.0)
 
             inverter_status_code = getattr(inverter, 'inverter_status', None)
             for status_label in self.INVERTER_STATUS_LABELS.values():
-                self.metrics['status'].labels(status=status_label).set(0.0)
-            resolved_status = self.INVERTER_STATUS_LABELS.get(inverter_status_code, 'UNKNOWN')
-            self.metrics['status'].labels(status=resolved_status).set(1.0)
+                self.metrics['status'].labels(inverter_serial=inverter_serial, status=status_label).set(0.0)
+            if isinstance(inverter_status_code, int):
+                resolved_status = self.INVERTER_STATUS_LABELS.get(inverter_status_code, 'UNKNOWN')
+            else:
+                resolved_status = 'UNKNOWN'
+            self.metrics['status'].labels(inverter_serial=inverter_serial, status=resolved_status).set(1.0)
 
             # Per-array gauges labelled with array="1" and array="2".
             for metric_key, (field_one, field_two, metric_name, _) in self.ARRAY_METRICS_MAP.items():
@@ -353,18 +384,18 @@ class GiveEnergyExporter:
                 value_two = inverter_value(field_two)
 
                 if value_one is not None:
-                    self.metrics[metric_key].labels(array='1').set(value_one)
+                    self.metrics[metric_key].labels(inverter_serial=inverter_serial, array='1').set(value_one)
                     logger.debug(f"{metric_key}[array=1]={value_one} ({metric_name})")
                 else:
                     logger.debug(f"Skipping {metric_key}[array=1], unavailable field: {field_one}")
 
                 if value_two is not None:
-                    self.metrics[metric_key].labels(array='2').set(value_two)
+                    self.metrics[metric_key].labels(inverter_serial=inverter_serial, array='2').set(value_two)
                     logger.debug(f"{metric_key}[array=2]={value_two} ({metric_name})")
                 else:
                     logger.debug(f"Skipping {metric_key}[array=2], unavailable field: {field_two}")
 
-            self.metrics['last_update_timestamp'].set(time.time())
+            self.metrics['last_update_timestamp'].labels(inverter_serial=inverter_serial).set(time.time())
             self.metrics['read_success'].inc()
             
         except Exception as e:
