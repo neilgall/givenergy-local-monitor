@@ -142,18 +142,118 @@
       ]
     },
     {
-      "id": 9,
-      "title": "Today's Energy",
+      "id": 10,
+      "title": "Current Power Flow",
       "type": "row",
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
       "panels": []
     },
     {
+      "id": 11,
+      "title": "Current Power Sources",
+      "type": "piechart",
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayLabels": [],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": ["value", "percent"]
+        },
+        "pieType": "pie",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "givenergy_power_solar_power",
+          "legendFormat": "Solar",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "clamp_min(givenergy_power_battery_power, 0)",
+          "legendFormat": "Battery Discharge",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "clamp_min(-givenergy_power_grid_power, 0)",
+          "legendFormat": "Grid Import",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Current Power Uses",
+      "type": "piechart",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayLabels": [],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": ["value", "percent"]
+        },
+        "pieType": "pie",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "givenergy_power_consumption_power",
+          "legendFormat": "Consumption",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "clamp_min(-givenergy_power_battery_power, 0)",
+          "legendFormat": "Battery Charging",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "clamp_min(givenergy_power_grid_power, 0)",
+          "legendFormat": "Grid Export",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Today's Energy",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "panels": []
+    },
+    {
       "id": 3,
       "title": "Solar",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 10 },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -188,7 +288,7 @@
       "id": 4,
       "title": "Consumption",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 10 },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -223,7 +323,7 @@
       "id": 5,
       "title": "Grid Import",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 10 },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -258,7 +358,7 @@
       "id": 6,
       "title": "Grid Export",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 10 },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -293,7 +393,7 @@
       "id": 7,
       "title": "Battery Charged",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 10 },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -328,7 +428,7 @@
       "id": 8,
       "title": "Battery Discharged",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 10 },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
       "fieldConfig": {
         "defaults": {
