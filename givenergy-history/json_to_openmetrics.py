@@ -130,6 +130,11 @@ def iter_row_samples(serial: str, row: dict[str, Any]) -> Iterable[tuple[str, fl
             yield from iter_numeric_metrics(row[key], [key], dict(base_labels))
 
 
+def freeze_labels(labels: dict[str, str]) -> tuple[tuple[str, str], ...]:
+    """Convert labels to a deterministic tuple for sorting/grouping."""
+    return tuple(sorted(labels.items()))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Convert one GivEnergy JSON export file to OpenMetrics for promtool."
@@ -163,6 +168,8 @@ def main() -> int:
     written_samples = 0
     written_types: set[str] = set()
 
+    sample_rows: list[tuple[str, tuple[tuple[str, str], ...], int, float]] = []
+
     with args.output.open("w", encoding="utf-8") as out:
         for inverter in inverters:
             if not isinstance(inverter, dict):
@@ -189,13 +196,20 @@ def main() -> int:
                 ts_ms = int(ts.timestamp() * 1000)
 
                 for metric, value, labels in iter_row_samples(serial, row):
-                    if metric not in written_types:
-                        out.write(f"# TYPE {metric} gauge\n")
-                        written_types.add(metric)
+                    sample_rows.append((metric, freeze_labels(labels), ts_ms, value))
 
-                    label_text = format_labels(labels)
-                    out.write(f"{metric}{label_text} {value} {ts_ms}\n")
-                    written_samples += 1
+        # Sort by metric family, then exact labelset, then timestamp.
+        # This significantly improves promtool ingestion speed for large backfills.
+        sample_rows.sort(key=lambda item: (item[0], item[1], item[2]))
+
+        for metric, frozen_labels, ts_ms, value in sample_rows:
+            if metric not in written_types:
+                out.write(f"# TYPE {metric} gauge\n")
+                written_types.add(metric)
+
+            label_text = format_labels(dict(frozen_labels))
+            out.write(f"{metric}{label_text} {value} {ts_ms}\n")
+            written_samples += 1
 
         out.write("# EOF\n")
 
