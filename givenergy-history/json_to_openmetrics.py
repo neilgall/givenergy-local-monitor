@@ -187,13 +187,13 @@ def write_samples(output_path: Path, sample_rows: list[tuple[str, tuple[tuple[st
     sample_rows.sort(key=lambda item: (item[0], item[1], item[2]))
 
     with output_path.open("w", encoding="utf-8") as out:
-        for metric, frozen_labels, ts_ms, value in sample_rows:
+        for metric, frozen_labels, ts_sec, value in sample_rows:
             if metric not in written_types:
                 out.write(f"# TYPE {metric} gauge\n")
                 written_types.add(metric)
 
             label_text = format_labels(dict(frozen_labels))
-            out.write(f"{metric}{label_text} {value} {ts_ms}\n")
+            out.write(f"{metric}{label_text} {value} {ts_sec}\n")
             written_samples += 1
 
         out.write("# EOF\n")
@@ -244,11 +244,11 @@ def main() -> int:
             except ValueError:
                 continue
 
-            ts_ms = int(ts.timestamp() * 1000)
+            ts_sec = int(ts.timestamp())
             bucket = bucket_key(ts, args.split_period)
 
             for metric, value, labels in iter_row_samples(serial, row):
-                bucketed_rows[bucket].append((metric, freeze_labels(labels), ts_ms, value))
+                bucketed_rows[bucket].append((metric, freeze_labels(labels), ts_sec, value))
 
     try:
         output_paths = resolve_output_paths(args, set(bucketed_rows.keys()) or {"single"})
