@@ -1,0 +1,173 @@
+{
+  "title": "GivEnergy Solar Monitor (Small)",
+  "uid": "givenergy-small",
+  "schemaVersion": 38,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 0,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": { "hidden": true },
+  "timezone": "browser",
+  "tags": ["givenergy", "solar", "small"],
+  "annotations": { "list": [] },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Battery Level",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 20 },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 80 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "orientation": "horizontal",
+        "text": { "valueSize": 32 }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "givenergy_power_battery_percent",
+          "legendFormat": "Battery %",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Power Sources",
+      "type": "piechart",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Solar" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#F2CC0C", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Battery Discharge" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#8AB8FF", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Grid Import" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#FF5733", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "options": {
+        "displayLabels": [],
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "values": ["value"]
+        },
+        "pieType": "pie",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "givenergy_power_solar_power",
+          "legendFormat": "Solar",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "clamp_min(givenergy_power_battery_power, 0)",
+          "legendFormat": "Battery Discharge",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "clamp_min(-givenergy_power_grid_power, 0)",
+          "legendFormat": "Grid Import",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Power Uses",
+      "type": "piechart",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Consumption" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#5794F2", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Battery Charging" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#B877D9", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Grid Export" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "options": {
+        "displayLabels": [],
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "values": ["value"]
+        },
+        "pieType": "pie",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "givenergy_power_consumption_power",
+          "legendFormat": "Consumption",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "clamp_min(-givenergy_power_battery_power, 0)",
+          "legendFormat": "Battery Charging",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "givenergy-prometheus" },
+          "expr": "clamp_min(givenergy_power_grid_power, 0)",
+          "legendFormat": "Grid Export",
+          "refId": "C"
+        }
+      ]
+    }
+  ]
+}
