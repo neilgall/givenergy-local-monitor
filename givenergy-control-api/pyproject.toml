@@ -1,0 +1,27 @@
+[project]
+name = "givenergy-control-api"
+version = "1.0.0"
+description = "FastAPI control server for GivEnergy inverter via local Modbus TCP"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+
+dependencies = [
+    "givenergy-modbus==0.10.1",
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.29.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+givenergy-control = "givenergy_control:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
