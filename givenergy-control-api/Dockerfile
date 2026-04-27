@@ -5,8 +5,9 @@ WORKDIR /app
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir \
     givenergy-modbus==0.10.1 \
-    "fastapi>=0.111.0" \
-    "uvicorn[standard]>=0.29.0"
+    "pydantic>=1.9,<2" \
+    "fastapi>=0.95.0,<0.100" \
+    "uvicorn[standard]>=0.21.0"
 
 COPY givenergy_control.py ./
 

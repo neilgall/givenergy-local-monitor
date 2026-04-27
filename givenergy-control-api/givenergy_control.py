@@ -12,6 +12,7 @@ Environment variables:
 """
 
 import asyncio
+import datetime
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -19,9 +20,10 @@ from datetime import time
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Path
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, validator
 
 from givenergy_modbus.client import GivEnergyClient
+from givenergy_modbus.model.plant import Plant
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -64,11 +66,12 @@ class WinterModeRequest(BaseModel):
         description="Target SoC to stop charging at (required when enabled=True)"
     )
 
-    @model_validator(mode="after")
-    def validate_target_soc(self) -> "WinterModeRequest":
-        if self.enabled and self.target_soc is None:
+    @validator("target_soc", always=True)
+    @classmethod
+    def validate_target_soc(cls, v, values) -> Optional[int]:
+        if values.get("enabled") and v is None:
             raise ValueError("target_soc is required when enabling winter mode")
-        return self
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +98,96 @@ async def _execute(op_name: str, fn):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("%s failed: %s", op_name, exc)
+        raise HTTPException(
+            status_code=503, detail=f"Inverter communication failed: {exc}"
+        ) from exc
+
+
+def _format_time(value: datetime.time) -> str:
+    return value.strftime("%H:%M")
+
+
+def _format_slot(slot_value) -> dict[str, Optional[str]]:
+    start, end = slot_value
+    return {
+        "start": _format_time(start) if isinstance(start, datetime.time) else None,
+        "end": _format_time(end) if isinstance(end, datetime.time) else None,
+    }
+
+
+def _is_slot_enabled(slot_value) -> bool:
+    start, end = slot_value
+    return not (
+        isinstance(start, datetime.time)
+        and isinstance(end, datetime.time)
+        and start.hour == 0
+        and start.minute == 0
+        and end.hour == 0
+        and end.minute == 0
+    )
+
+
+async def _read_state() -> dict:
+    """Read current inverter state from holding + input registers."""
+
+    def _run() -> dict:
+        client = _make_client()
+        plant = Plant(number_batteries=1)
+        client.refresh_plant(plant, full_refresh=True)
+        inverter = plant.inverter
+
+        charge_slot_1 = getattr(inverter, "charge_slot_1", (None, None))
+        charge_slot_2 = getattr(inverter, "charge_slot_2", (None, None))
+        discharge_slot_1 = getattr(inverter, "discharge_slot_1", (None, None))
+        discharge_slot_2 = getattr(inverter, "discharge_slot_2", (None, None))
+
+        battery_power_mode = int(getattr(inverter, "battery_power_mode", 1))
+        enable_charge_target = bool(getattr(inverter, "enable_charge_target", False))
+
+        return {
+            "charge_slots": {
+                "1": {
+                    **_format_slot(charge_slot_1),
+                    "enabled": _is_slot_enabled(charge_slot_1),
+                },
+                "2": {
+                    **_format_slot(charge_slot_2),
+                    "enabled": _is_slot_enabled(charge_slot_2),
+                },
+            },
+            "discharge_slots": {
+                "1": {
+                    **_format_slot(discharge_slot_1),
+                    "enabled": _is_slot_enabled(discharge_slot_1),
+                },
+                "2": {
+                    **_format_slot(discharge_slot_2),
+                    "enabled": _is_slot_enabled(discharge_slot_2),
+                },
+            },
+            "battery": {
+                "soc_reserve_percent": int(getattr(inverter, "battery_soc_reserve", 0)),
+                "charge_limit_percent": int(getattr(inverter, "battery_charge_limit", 0)),
+                "discharge_limit_percent": int(getattr(inverter, "battery_discharge_limit", 0)),
+                "target_soc_percent": int(getattr(inverter, "charge_target_soc", 100)),
+                "eco_mode_enabled": battery_power_mode == 1,
+                "winter_mode_enabled": enable_charge_target,
+                "winter_mode_target_soc": (
+                    int(getattr(inverter, "charge_target_soc", 100))
+                    if enable_charge_target
+                    else None
+                ),
+                "discharge_enabled": bool(getattr(inverter, "enable_discharge", False)),
+                "charge_enabled": bool(getattr(inverter, "enable_charge", False)),
+            },
+        }
+
+    try:
+        return await asyncio.to_thread(_run)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("read_state failed: %s", exc)
         raise HTTPException(
             status_code=503, detail=f"Inverter communication failed: {exc}"
         ) from exc
@@ -158,6 +251,19 @@ async def reset_charge_slot(
     return {"slot": slot, "cleared": True}
 
 
+@app.get(
+    "/slots/charge/{slot}",
+    summary="Get charge slot current state",
+    tags=["Charge Slots"],
+)
+async def get_charge_slot(
+    slot: int = Path(..., ge=1, le=2, description="Slot number (1 or 2)"),
+):
+    state = await _read_state()
+    slot_state = state["charge_slots"][str(slot)]
+    return {"slot": slot, **slot_state}
+
+
 # ---------------------------------------------------------------------------
 # Discharge slot endpoints
 # ---------------------------------------------------------------------------
@@ -192,6 +298,19 @@ async def reset_discharge_slot(
     else:
         await _execute("reset_discharge_slot_2", lambda c: c.reset_discharge_slot_2())
     return {"slot": slot, "cleared": True}
+
+
+@app.get(
+    "/slots/discharge/{slot}",
+    summary="Get discharge slot current state",
+    tags=["Discharge Slots"],
+)
+async def get_discharge_slot(
+    slot: int = Path(..., ge=1, le=2, description="Slot number (1 or 2)"),
+):
+    state = await _read_state()
+    slot_state = state["discharge_slots"][str(slot)]
+    return {"slot": slot, **slot_state}
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +364,46 @@ async def set_target_soc(body: SoCPercentRequest):
     return {"target_soc_percent": body.percent}
 
 
+@app.get(
+    "/battery/soc-reserve",
+    summary="Get minimum battery SoC reserve",
+    tags=["Battery"],
+)
+async def get_soc_reserve():
+    state = await _read_state()
+    return {"soc_reserve_percent": state["battery"]["soc_reserve_percent"]}
+
+
+@app.get(
+    "/battery/charge-limit",
+    summary="Get battery charge power limit",
+    tags=["Battery"],
+)
+async def get_charge_limit():
+    state = await _read_state()
+    return {"charge_limit_percent": state["battery"]["charge_limit_percent"]}
+
+
+@app.get(
+    "/battery/discharge-limit",
+    summary="Get battery discharge power limit",
+    tags=["Battery"],
+)
+async def get_discharge_limit_value():
+    state = await _read_state()
+    return {"discharge_limit_percent": state["battery"]["discharge_limit_percent"]}
+
+
+@app.get(
+    "/battery/target-soc",
+    summary="Get battery target SoC",
+    tags=["Battery"],
+)
+async def get_target_soc():
+    state = await _read_state()
+    return {"target_soc_percent": state["battery"]["target_soc_percent"]}
+
+
 # ---------------------------------------------------------------------------
 # Mode endpoints
 # ---------------------------------------------------------------------------
@@ -272,6 +431,16 @@ async def set_eco_mode(body: EnabledRequest):
     return {"eco_mode_enabled": body.enabled}
 
 
+@app.get(
+    "/battery/eco-mode",
+    summary="Get eco mode state",
+    tags=["Battery"],
+)
+async def get_eco_mode():
+    state = await _read_state()
+    return {"eco_mode_enabled": state["battery"]["eco_mode_enabled"]}
+
+
 @app.put(
     "/battery/winter-mode",
     summary="Enable or disable winter mode (charge target SoC)",
@@ -290,6 +459,19 @@ async def set_winter_mode(body: WinterModeRequest):
     return {"winter_mode_enabled": body.enabled, "target_soc": body.target_soc}
 
 
+@app.get(
+    "/battery/winter-mode",
+    summary="Get winter mode state",
+    tags=["Battery"],
+)
+async def get_winter_mode():
+    state = await _read_state()
+    return {
+        "winter_mode_enabled": state["battery"]["winter_mode_enabled"],
+        "target_soc": state["battery"]["winter_mode_target_soc"],
+    }
+
+
 @app.put(
     "/battery/discharge",
     summary="Enable or disable battery discharge",
@@ -302,6 +484,16 @@ async def set_discharge_enabled(body: EnabledRequest):
     else:
         await _execute("disable_discharge", lambda c: c.disable_discharge())
     return {"discharge_enabled": body.enabled}
+
+
+@app.get(
+    "/battery/discharge",
+    summary="Get battery discharge enable state",
+    tags=["Battery"],
+)
+async def get_discharge_enabled():
+    state = await _read_state()
+    return {"discharge_enabled": state["battery"]["discharge_enabled"]}
 
 
 @app.put(
@@ -318,11 +510,31 @@ async def set_charge_enabled(body: EnabledRequest):
     return {"charge_enabled": body.enabled}
 
 
+@app.get(
+    "/battery/charge",
+    summary="Get battery charge (smart charge) enable state",
+    tags=["Battery"],
+)
+async def get_charge_enabled():
+    state = await _read_state()
+    return {"charge_enabled": state["battery"]["charge_enabled"]}
+
+
+@app.get(
+    "/state",
+    summary="Get full current control state",
+    description="Returns charge/discharge slots and battery control flags/limits.",
+    tags=["State"],
+)
+async def get_full_state():
+    return await _read_state()
+
+
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+def main():
     import uvicorn
 
     uvicorn.run(
@@ -331,3 +543,7 @@ if __name__ == "__main__":
         port=int(os.environ.get("API_PORT", "8000")),
         log_level=os.environ.get("LOG_LEVEL", "info").lower(),
     )
+
+
+if __name__ == "__main__":
+    main()

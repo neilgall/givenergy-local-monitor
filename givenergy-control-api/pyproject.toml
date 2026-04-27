@@ -8,8 +8,9 @@ license = {text = "MIT"}
 
 dependencies = [
     "givenergy-modbus==0.10.1",
-    "fastapi>=0.111.0",
-    "uvicorn[standard]>=0.29.0",
+    "pydantic>=1.9,<2",
+    "fastapi>=0.95.0,<0.100",
+    "uvicorn[standard]>=0.21.0",
 ]
 
 [project.optional-dependencies]
